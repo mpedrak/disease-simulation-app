@@ -2,7 +2,7 @@ import pygame
 import random
 import sys
 import enum
-
+import csv
 
 
 # --- Parameters ---
@@ -22,6 +22,8 @@ BLUE = (0, 0, 255)
 FPS = 60 
 NUM_AGENTS = 200  
 MAX_SPEED = 3 # of agents
+MAX_DAYS = 100 
+GATHER_STATS = True
 
 # Disease
 INFECTION_RADIUS = 50  
@@ -95,6 +97,17 @@ class Agent:
                     self.status = Status.Recovered
                     self.immune_days = 0
 
+def gather_stats(agents):
+    susceptible = 0
+    infected = 0
+    recovered = 0
+
+    for other in agents:
+        if other.status == Status.Susceptible: susceptible += 1
+        elif other.status == Status.Infected: infected += 1
+        else: recovered += 1
+
+    return susceptible, infected, recovered
 
 
 # --- Code ---
@@ -112,8 +125,11 @@ for _ in range(0, NUM_AGENTS):
    
 clock = pygame.time.Clock()
 running = True
+day = 1
+stats = []
 
 while running:
+    day += 1
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -128,5 +144,17 @@ while running:
     pygame.display.flip()
     clock.tick(FPS)
 
+    if GATHER_STATS: stats.append(gather_stats(agents))
+
+    if day > MAX_DAYS: running = False
+
 pygame.quit()
+
+if GATHER_STATS:
+    with open('./stats.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Day', 'Susceptible', 'Infected', 'Recovered'])
+        for i, stat in enumerate(stats):
+            writer.writerow([i + 1] + list(stat))
+
 sys.exit()
