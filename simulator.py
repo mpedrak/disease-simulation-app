@@ -3,13 +3,14 @@ import random
 import sys
 import enum
 import csv
-import time
+import pathlib
 
 
-# --- Parameters ---
+
+# --- Constants ---
 
 # Pygame 
-WIDTH, HEIGHT = 1000, 800 # window size
+WIDTH, HEIGHT = 1200, 1000 # window size
 DOT_SIZE = 7 # of agents
 WINDOW_TITLE = "Simulation of disease spread in a population"
 
@@ -21,12 +22,28 @@ BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
 LIGHT_GRAY = (200, 200, 200)
 
+
+
+# --- Parameters --- (user modifiable)
+
 # Simulation
 FPS = 60 
 NUM_AGENTS = 200  
-MAX_SPEED = 3 # of agents
-MAX_DAYS = 100 
+MAX_DAYS = 300 
 GATHER_STATS = True
+
+# Agents parameters
+NO_MOVE_PROBABILITY = 0.3
+MAX_SPEED = 10 # of agents (max distance per day)
+DAY_IN_WEEK_MODIFIER = [0.2, 0.5, 0.8, 0.4, 0.3, 1, 0.9] # of max speed through the week
+VACCINED_PERCENTAGE = 0.01 # of modifing agents status every day
+MASKED_PERCENTAGE = 0.02 # of agents every day
+FEARFUL_PERCENTAGE = 0.2 # of new agents after creating
+ANTI_VACCINE_PERCENTAGE = 0.1 # of new agents after creating
+MIN_DAYS_TO_LIVE = 100 # normal live
+NORMAL_DEATH_PROBABILITY = 0.01 # after min_days_to_live
+REPRODUCTION_PROBABILITY = 0.0005 # every day
+REPRODUCTION_RADIUS = 30
 
 # Disease
 INFECTION_RADIUS = 50  
@@ -35,6 +52,7 @@ INFECTED_ON_START = 0.2
 MIN_INFECTED_DAYS = 30
 CURE_PROBABILITY = 0.01 # after min_infected_days
 IMMUNITY_DAYS = 90 
+DISEASE_DEATH_PROBABILITY = 0.02 # every day
 
 
 
@@ -54,9 +72,18 @@ class Agent:
         self.velocity = [random.uniform(-MAX_SPEED, MAX_SPEED), random.uniform(-MAX_SPEED, MAX_SPEED)]
         self.infected_days = 0
         self.immune_days = 0
+        self.anti_vaccine = False
+        self.fearful = False
+        self.days_old = 0
 
 
     def move(self):
+        if random.random() < NO_MOVE_PROBABILITY: return
+
+        if self.fearful: speed = MAX_SPEED / 2
+        else: speed = MAX_SPEED
+
+        self.velocity = [random.uniform(-speed, speed), random.uniform(-speed, speed)]
         self.x += self.velocity[0]
         self.y += self.velocity[1]
 
@@ -82,32 +109,69 @@ class Agent:
         pygame.draw.circle(screen, color, (int(self.x), int(self.y)), DOT_SIZE)
 
 
-    def simulate_day(self, others):
-        if self.status == Status.Recovered:
+    def simulate_day(self, others, vaccined_today):
+        # Check if its time to die
+        self.days_old += 1
+        if self.days_old >= MIN_DAYS_TO_LIVE:
+            if random.random() < NORMAL_DEATH_PROBABILITY: return "DEAD"
+
+        # Check if agent is vaccinated
+        if self.anti_vaccine == False and self.status == Status.Susceptible:
+            if random.random() < VACCINED_PERCENTAGE:
+                self.status = Status.Recovered
+                self.immune_days = 0
+                vaccined_today[0] += 1
+
+        # Check if agent has still immunity
+        elif self.status == Status.Recovered:
             self.immune_days += 1
             if self.immune_days >= IMMUNITY_DAYS: self.status = Status.Susceptible
 
         if self.status == Status.Infected:
+            # Check if agent is dead due to disease
+            if random.random() < DISEASE_DEATH_PROBABILITY:
+                return "DEAD"
+            
+            # Try to infect others
             for other in others:
-                if other.status == Status.Susceptible and self.distance_squared(other) < INFECTION_RADIUS ** 2:
-                    if random.random() < INFECTION_PROBABILITY:
-                        other.status = Status.Infected
-                        other.infected_days = 0
+                if other.status == Status.Susceptible:
+                    if (
+                        (random.random() < MASKED_PERCENTAGE and self.distance_squared(other) < (INFECTION_RADIUS / 2) ** 2) 
+                        or self.distance_squared(other) < INFECTION_RADIUS ** 2
+                    ):
+                        if random.random() < INFECTION_PROBABILITY:
+                            other.status = Status.Infected
+                            other.infected_days = 0
 
+            # Check if agent is cured
             self.infected_days += 1
             if self.infected_days >= MIN_INFECTED_DAYS:
                 if random.random() < CURE_PROBABILITY:
                     self.status = Status.Recovered
                     self.immune_days = 0
 
+        # Try to reproduce
+        for other in others:
+            if self.distance_squared(other) < REPRODUCTION_RADIUS ** 2 and random.random() < REPRODUCTION_PROBABILITY:
+                x = (self.x + other.x) / 2
+                y = (self.y + other.y) / 2
+                new_agent = Agent(x, y, Status.Susceptible)
+                if random.random() < ANTI_VACCINE_PERCENTAGE: new_agent.anti_vaccine = True
+                if random.random() < FEARFUL_PERCENTAGE: new_agent.fearful = True
+                return new_agent
+
+
+
+# --- Other functions ---
+
 def gather_stats(agents):
     susceptible = 0
     infected = 0
     recovered = 0
 
-    for other in agents:
-        if other.status == Status.Susceptible: susceptible += 1
-        elif other.status == Status.Infected: infected += 1
+    for x in agents:
+        if x.status == Status.Susceptible: susceptible += 1
+        elif x.status == Status.Infected: infected += 1
         else: recovered += 1
 
     return susceptible, infected, recovered
@@ -118,16 +182,30 @@ def draw_start_screen(window):
     big_font = pygame.font.SysFont(None, 60)
 
     input_fields = {
-        "FPS": "60",
-        "NUM_AGENTS": "200",
-        "MAX_SPEED": "3",
-        "MAX_DAYS": "100",
-        "INFECTION_RADIUS": "50",
-        "INFECTION_PROBABILITY": "0.2",
-        "INFECTED_ON_START": "0.2",
-        "MIN_INFECTED_DAYS": "30",
-        "CURE_PROBABILITY": "0.01",
-        "IMMUNITY_DAYS": "90",
+        "FPS": str(FPS),
+        "Agents count": str(NUM_AGENTS),
+        "Maximum simulation duration in days": str(MAX_DAYS),
+        "Gather stats data": str(GATHER_STATS),
+        
+        "Probability of agent staying in one place": str(NO_MOVE_PROBABILITY),
+        "Maximum distance per day": str(MAX_SPEED),
+        "Percentage of population vaccined every day": str(VACCINED_PERCENTAGE),
+        "Percentage of population masked every day": str(MASKED_PERCENTAGE),
+        "Percentage of population being fearful": str(FEARFUL_PERCENTAGE),
+        "Percentage of population being anti vaccine": str(ANTI_VACCINE_PERCENTAGE),
+        "Minimum normal life duration": str(MIN_DAYS_TO_LIVE),
+        "Probability of natural death": str(NORMAL_DEATH_PROBABILITY),
+        "Probability of reproduction ": str(REPRODUCTION_PROBABILITY),
+        "Reproduction radius": str(REPRODUCTION_RADIUS),
+        "Modifiers of maximum distance per day during week": str(DAY_IN_WEEK_MODIFIER),
+        
+        "Infection radius": str(INFECTION_RADIUS),
+        "Infection probability": str(INFECTION_PROBABILITY),
+        "Percentage of population infected on start": str(INFECTED_ON_START),
+        "Minimum infection duration": str(MIN_INFECTED_DAYS),
+        "Curing probability after minimum days": str(CURE_PROBABILITY),
+        "Immunity duration after curied": str(IMMUNITY_DAYS),
+        "Probability of death due to infection": str(DISEASE_DEATH_PROBABILITY),
     }
 
     value_fields = {}
@@ -167,20 +245,20 @@ def draw_start_screen(window):
 
         window.fill(WHITE)
         title = big_font.render(WINDOW_TITLE, True, BLACK)
-        window.blit(title, (WIDTH // 2 - title.get_width() // 2, 30))
+        window.blit(title, (WIDTH // 2 - title.get_width() // 2, 20))
 
-        y_offset = 120
+        y_offset = 80
         value_fields.clear()
 
         max_label_width = 0
         for key, value in input_fields.items():
-            label = font.render(key.replace("_", " ").capitalize(), True, BLACK)
+            label = font.render(key, True, BLACK)
             max_label_width = max(max_label_width, label.get_width())
 
         max_label_width += 20
 
         for key, value in input_fields.items():
-            label = font.render(key.replace("_", " ").capitalize(), True, BLACK)
+            label = font.render(key, True, BLACK)
             window.blit(label, (WIDTH // 2 - max_label_width, y_offset))
 
             field = pygame.Rect(WIDTH // 2, y_offset, max_label_width, 30)
@@ -193,7 +271,7 @@ def draw_start_screen(window):
             text = font.render(display_text, True, BLACK)
             window.blit(text, (field.x + 5, field.y + 5))
 
-            y_offset += 40
+            y_offset += 32
 
         pygame.draw.rect(window, BLACK, start_button)
         pygame.draw.rect(window, BLACK, exit_button)
@@ -209,63 +287,111 @@ def draw_start_screen(window):
         pygame.display.flip()
 
 
-# --- Code ---
+def set_params(params):
+    global FPS, NUM_AGENTS, MAX_DAYS
+    global NO_MOVE_PROBABILITY, MAX_SPEED, VACCINED_PERCENTAGE, MASKED_PERCENTAGE
+    global FEARFUL_PERCENTAGE, ANTI_VACCINE_PERCENTAGE, MIN_DAYS_TO_LIVE
+    global NORMAL_DEATH_PROBABILITY, REPRODUCTION_PROBABILITY, REPRODUCTION_RADIUS
+    global INFECTION_RADIUS, INFECTION_PROBABILITY, INFECTED_ON_START
+    global MIN_INFECTED_DAYS, CURE_PROBABILITY, IMMUNITY_DAYS, DISEASE_DEATH_PROBABILITY
+    global GATHER_STATS, DAY_IN_WEEK_MODIFIER
+
+    FPS = int(params["FPS"])
+    NUM_AGENTS = int(params["Agents count"])
+    MAX_DAYS = int(params["Maximum simulation duration in days"])
+    GATHER_STATS = params["Gather stats data"].lower() == "true"
+    
+    NO_MOVE_PROBABILITY = float(params["Probability of agent staying in one place"])
+    MAX_SPEED = int(params["Maximum distance per day"])
+    VACCINED_PERCENTAGE = float(params["Percentage of population vaccined every day"])
+    MASKED_PERCENTAGE = float(params["Percentage of population masked every day"])
+    FEARFUL_PERCENTAGE = float(params["Percentage of population being fearful"])
+    ANTI_VACCINE_PERCENTAGE = float(params["Percentage of population being anti vaccine"])
+    MIN_DAYS_TO_LIVE = int(params["Minimum normal life duration"])
+    NORMAL_DEATH_PROBABILITY = float(params["Probability of natural death"])
+    REPRODUCTION_PROBABILITY = float(params["Probability of reproduction "])
+    REPRODUCTION_RADIUS = int(params["Reproduction radius"])
+    DAY_IN_WEEK_MODIFIER = [float(x) for x in params["Modifiers of maximum distance per day during week"][1 : -1].split(",")]
+    
+    INFECTION_RADIUS = int(params["Infection radius"])
+    INFECTION_PROBABILITY = float(params["Infection probability"])
+    INFECTED_ON_START = float(params["Percentage of population infected on start"])
+    MIN_INFECTED_DAYS = int(params["Minimum infection duration"])
+    CURE_PROBABILITY = float(params["Curing probability after minimum days"])
+    IMMUNITY_DAYS = int(params["Immunity duration after curied"])
+    DISEASE_DEATH_PROBABILITY = float(params["Probability of death due to infection"])
+
+
+
+# --- Main ---
 
 pygame.init()
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption(WINDOW_TITLE)
 
 params = draw_start_screen(window)
+set_params(params)
 
-FPS = int(params["FPS"])
-NUM_AGENTS = int(params["NUM_AGENTS"])
-MAX_SPEED = int(params["MAX_SPEED"])
-MAX_DAYS = int(params["MAX_DAYS"])
-INFECTION_RADIUS = int(params["INFECTION_RADIUS"])
-INFECTION_PROBABILITY = float(params["INFECTION_PROBABILITY"])
-INFECTED_ON_START = float(params["INFECTED_ON_START"])
-MIN_INFECTED_DAYS = int(params["MIN_INFECTED_DAYS"])
-CURE_PROBABILITY = float(params["CURE_PROBABILITY"])
-IMMUNITY_DAYS = int(params["IMMUNITY_DAYS"])
+if GATHER_STATS:
+    stats_path = pathlib.Path("./stats")
+    if not stats_path.exists():
+        stats_path.mkdir(parents=True)
 
 agents = []
 for _ in range(0, NUM_AGENTS):
     x = random.randint(0, WIDTH)
     y = random.randint(0, HEIGHT)
-    if random.random() < INFECTED_ON_START: agents.append(Agent(x, y, Status.Infected))
-    else: agents.append(Agent(x, y, Status.Susceptible))
-   
+    agent = Agent(x, y, Status.Susceptible)
+    if random.random() < INFECTED_ON_START: agent.status = Status.Infected
+    if random.random() < ANTI_VACCINE_PERCENTAGE: agent.anti_vaccine = True
+    if random.random() < FEARFUL_PERCENTAGE: agent.fearful = True
+    agents.append(agent)
+
 clock = pygame.time.Clock()
 running = True
-day = 1
+day = 0
 stats = []
+start_max_speed = MAX_SPEED
 
 while running:
-    day += 1
+    day_in_week = day % 7
+    MAX_SPEED = start_max_speed * DAY_IN_WEEK_MODIFIER[day_in_week]
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
     window.fill(WHITE)
 
+    vaccined_today = [0]
     for agent in agents:
         agent.move()
-        agent.simulate_day(agents)
-        agent.draw(window)
+        result = agent.simulate_day(agents, vaccined_today)
+        if result == "DEAD":
+            agents.remove(agent)
+        elif result is not None: # reproduction happened
+            agents.append(result)
+            agent.draw(window)
+            result.draw(window)
+        else:
+            agent.draw(window)
 
     pygame.display.flip()
     clock.tick(FPS)
 
-    if GATHER_STATS: stats.append(gather_stats(agents))
-
-    if day > MAX_DAYS: running = False
+    s = list(gather_stats(agents))
+    s.append(vaccined_today[0])
+    if GATHER_STATS: stats.append(s)
+    
+    day += 1
+    if day >= MAX_DAYS: running = False
 
 pygame.quit()
 
 if GATHER_STATS:
-    with open('./stats.csv', mode='w', newline='') as file:
+    with open('./stats/total-counts.csv', mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Day', 'Susceptible', 'Infected', 'Recovered'])
+        writer.writerow(['Day', 'Susceptible', 'Infected', 'Recovered', 'Vaccined'])
         for i, stat in enumerate(stats):
             writer.writerow([i + 1] + list(stat))
 

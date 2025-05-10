@@ -174,5 +174,5 @@ cython_debug/
 .pypirc
 
 # Project specific files
-*.csv
-*.png
+stats/
+plots/
