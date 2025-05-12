@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import pathlib
@@ -6,6 +8,10 @@ import pathlib
 plot_path = pathlib.Path("./plots")
 if not plot_path.exists():
     plot_path.mkdir(parents=True)
+
+
+# Get datetime prefix
+datetime_prefix = datetime.now().strftime("%m-%d_%H-%M-%S") + "-"
 
 
 df = pd.read_csv('./stats/total-counts.csv')
@@ -19,15 +25,15 @@ plt.plot(df['Day'], df['Recovered'], label="Wyzdrowiali", color='green')
 
 plt.title("Wykres symulacji epidemii")
 plt.xlabel("Dzień")
-xticks = [1]
-xticks.extend(range(df['Day'].max() // 20, df['Day'].max() + 1, df['Day'].max() // 20))
+xticks = []
+xticks.extend(range(0, df['Day'].max() + 1, df['Day'].max() // 20))
 xticks[-1] = (df['Day'].max())
 plt.xticks(xticks)
 plt.ylabel("Liczba osób")
 plt.legend()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
-plt.savefig('./plots/total-counts.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}total-counts.png', dpi=300)
 plt.close()
 
 
@@ -50,7 +56,7 @@ plt.yticks(range(0, 101, 10))
 plt.legend()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
-plt.savefig('./plots/total-percentages.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}total-percentages.png', dpi=300)
 plt.close()
 
 
@@ -67,7 +73,7 @@ plt.yticks(range(0, df['Vaccined'].max() + 1, 1))
 plt.legend()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
-plt.savefig('./plots/vaccinations.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}vaccinations.png', dpi=300)
 plt.close()
 
 
@@ -85,7 +91,7 @@ plt.ylabel("Różnica w liczbie osób")
 plt.legend()
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.savefig('./plots/total-delta.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}total-delta.png', dpi=300)
 plt.close()
 
 
@@ -103,7 +109,7 @@ plt.ylabel("Liczba osób")
 plt.legend()
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.savefig('./plots/total-sum.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}total-sum.png', dpi=300)
 plt.close()
 
 
@@ -124,5 +130,5 @@ plt.ylabel("Zmiana liczby osób")
 plt.legend()
 plt.tight_layout()
 plt.grid(axis='y', linestyle='--', alpha=0.7)
-plt.savefig('./plots/total-counts-delta.png', dpi=300)
+plt.savefig(f'./plots/{datetime_prefix}total-counts-delta.png', dpi=300)
 plt.close()

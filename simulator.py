@@ -1,3 +1,5 @@
+from typing import Union
+
 import pygame
 import random
 import sys
@@ -76,6 +78,16 @@ class Agent:
         self.fearful = False
         self.days_old = 0
 
+    def get_info_list(self) -> list[str]:
+        return [
+            f"Coords: ({self.x:.2f}, {self.y:.2f})",
+            f"Status: {agent.status.name}",
+            f"Days old: {agent.days_old}",
+            f"Infected days: {agent.infected_days}",
+            f"Immune days: {agent.immune_days}",
+            f"Anti vaccine: {agent.anti_vaccine}",
+            f"Fearful: {agent.fearful}"
+        ]
 
     def move(self):
         if random.random() < NO_MOVE_PROBABILITY: return
@@ -102,11 +114,13 @@ class Agent:
         return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
 
 
-    def draw(self, screen):
+    def draw(self, screen, selected=False):
         if self.status == Status.Susceptible: color = GREEN
         elif self.status == Status.Infected: color = RED
         else: color = BLUE
         pygame.draw.circle(screen, color, (int(self.x), int(self.y)), DOT_SIZE)
+        if selected:
+            pygame.draw.circle(screen, BLACK, (int(self.x), int(self.y)), DOT_SIZE + 3, 2)
 
 
     def simulate_day(self, others, vaccined_today):
@@ -197,7 +211,7 @@ def draw_start_screen(window):
         "Probability of natural death": str(NORMAL_DEATH_PROBABILITY),
         "Probability of reproduction ": str(REPRODUCTION_PROBABILITY),
         "Reproduction radius": str(REPRODUCTION_RADIUS),
-        "Modifiers of maximum distance per day during week": str(DAY_IN_WEEK_MODIFIER),
+        "Modifiers of maximum distance per day during week": str(DAY_IN_WEEK_MODIFIER)[1 : -1],
         
         "Infection radius": str(INFECTION_RADIUS),
         "Infection probability": str(INFECTION_PROBABILITY),
@@ -213,8 +227,8 @@ def draw_start_screen(window):
 
     action_buttons_width = 300
     action_buttons_height = 50
-    start_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 210, action_buttons_width, action_buttons_height)
-    exit_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 150, action_buttons_width, action_buttons_height)
+    start_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 190, action_buttons_width, action_buttons_height)
+    exit_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 134, action_buttons_width, action_buttons_height)
 
     while True:
         for event in pygame.event.get():
@@ -311,7 +325,7 @@ def set_params(params):
     NORMAL_DEATH_PROBABILITY = float(params["Probability of natural death"])
     REPRODUCTION_PROBABILITY = float(params["Probability of reproduction "])
     REPRODUCTION_RADIUS = int(params["Reproduction radius"])
-    DAY_IN_WEEK_MODIFIER = [float(x) for x in params["Modifiers of maximum distance per day during week"][1 : -1].split(",")]
+    DAY_IN_WEEK_MODIFIER = [float(x) for x in params["Modifiers of maximum distance per day during week"].split(",")]
     
     INFECTION_RADIUS = int(params["Infection radius"])
     INFECTION_PROBABILITY = float(params["Infection probability"])
@@ -321,6 +335,46 @@ def set_params(params):
     IMMUNITY_DAYS = int(params["Immunity duration after curied"])
     DISEASE_DEATH_PROBABILITY = float(params["Probability of death due to infection"])
 
+
+def get_hovered_agent(agents):
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    for agent in agents:
+        dx = agent.x - mouse_x
+        dy = agent.y - mouse_y
+        if dx**2 + dy**2 <= DOT_SIZE**2:
+            return agent
+    return None
+
+
+def draw_tooltip(window, agent, set_coords: Union[tuple, None] = None, auto_position: bool = True):
+    if set_coords is None:
+        tooltip_x, tooltip_y = pygame.mouse.get_pos()
+        x, y = tooltip_x + 10, tooltip_y + 10
+    else:
+        x, y = set_coords
+
+    font = pygame.font.SysFont(None, 20)
+    padding = 5
+    line_height = 20
+
+    info_lines = agent.get_info_list()
+
+    tooltip_width = max(font.size(line)[0] for line in info_lines) + 2 * padding
+    tooltip_height = line_height * len(info_lines) + 2 * padding
+
+    if auto_position:
+        if x + tooltip_width > WIDTH:
+            x = WIDTH - tooltip_width
+        if y + tooltip_height > HEIGHT:
+            y = HEIGHT - tooltip_height
+
+    tooltip_rect = pygame.Rect(x, y, tooltip_width, tooltip_height)
+    pygame.draw.rect(window, LIGHT_GRAY, tooltip_rect)
+    pygame.draw.rect(window, BLACK, tooltip_rect, 2)
+
+    for i, line in enumerate(info_lines):
+        text = font.render(line, True, BLACK)
+        window.blit(text, (x + 5, y + 5 + i * 20))
 
 
 # --- Main ---
@@ -352,6 +406,13 @@ running = True
 day = 0
 stats = []
 start_max_speed = MAX_SPEED
+selected_agent = None
+paused = False
+
+if GATHER_STATS:    # 0th day
+    s = list(gather_stats(agents))
+    s.append(0)     # Vaccined
+    stats.append(s)
 
 while running:
     day_in_week = day % 7
@@ -359,32 +420,46 @@ while running:
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            running = False        
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            selected_agent = get_hovered_agent(agents)
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            paused = not paused
 
     window.fill(WHITE)
 
-    vaccined_today = [0]
-    for agent in agents:
-        agent.move()
-        result = agent.simulate_day(agents, vaccined_today)
-        if result == "DEAD":
-            agents.remove(agent)
-        elif result is not None: # reproduction happened
-            agents.append(result)
-            agent.draw(window)
-            result.draw(window)
-        else:
-            agent.draw(window)
+    if paused:
+        for agent in agents:
+            agent.draw(window, selected=(agent == selected_agent))
+        
+        hovered_agent = get_hovered_agent(agents)
+        if hovered_agent:
+            draw_tooltip(window, hovered_agent)
+        
+    else:
+
+        vaccined_today = [0]
+        for agent in agents:
+            agent.move()
+            result = agent.simulate_day(agents, vaccined_today)
+            if result == "DEAD":
+                agents.remove(agent)
+            elif result is not None: # reproduction happened
+                agents.append(result)
+                agent.draw(window, selected=(agent == selected_agent))
+                result.draw(window)
+            else:
+                agent.draw(window, selected=(agent == selected_agent))
+
+        s = list(gather_stats(agents))
+        s.append(vaccined_today[0])
+        if GATHER_STATS: stats.append(s)
+        
+        day += 1
+        if day >= MAX_DAYS: running = False
 
     pygame.display.flip()
     clock.tick(FPS)
-
-    s = list(gather_stats(agents))
-    s.append(vaccined_today[0])
-    if GATHER_STATS: stats.append(s)
-    
-    day += 1
-    if day >= MAX_DAYS: running = False
 
 pygame.quit()
 
@@ -393,6 +468,6 @@ if GATHER_STATS:
         writer = csv.writer(file)
         writer.writerow(['Day', 'Susceptible', 'Infected', 'Recovered', 'Vaccined'])
         for i, stat in enumerate(stats):
-            writer.writerow([i + 1] + list(stat))
+            writer.writerow([i] + list(stat))
 
 sys.exit()
