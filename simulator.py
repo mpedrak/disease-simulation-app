@@ -81,12 +81,12 @@ class Agent:
     def get_info_list(self) -> list[str]:
         return [
             f"Coords: ({self.x:.2f}, {self.y:.2f})",
-            f"Status: {agent.status.name}",
-            f"Days old: {agent.days_old}",
-            f"Infected days: {agent.infected_days}",
-            f"Immune days: {agent.immune_days}",
-            f"Anti vaccine: {agent.anti_vaccine}",
-            f"Fearful: {agent.fearful}"
+            f"Status: {self.status.name}",
+            f"Days old: {self.days_old}",
+            f"Infected days: {self.infected_days}",
+            f"Immune days: {self.immune_days}",
+            f"Anti vaccine: {self.anti_vaccine}",
+            f"Fearful: {self.fearful}"
         ]
 
     def move(self):
