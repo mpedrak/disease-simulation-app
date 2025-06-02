@@ -33,6 +33,7 @@ FPS = 60
 NUM_AGENTS = 200  
 MAX_DAYS = 300 
 GATHER_STATS = True
+SHOW_VIEW = True
 
 # Agents parameters
 NO_MOVE_PROBABILITY = 0.3
@@ -200,6 +201,7 @@ def draw_start_screen(window):
         "Agents count": str(NUM_AGENTS),
         "Maximum simulation duration in days": str(MAX_DAYS),
         "Gather stats data": str(GATHER_STATS),
+        "Show simulation view": str(SHOW_VIEW),
         
         "Probability of agent staying in one place": str(NO_MOVE_PROBABILITY),
         "Maximum distance per day": str(MAX_SPEED),
@@ -227,8 +229,8 @@ def draw_start_screen(window):
 
     action_buttons_width = 300
     action_buttons_height = 50
-    start_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 190, action_buttons_width, action_buttons_height)
-    exit_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 134, action_buttons_width, action_buttons_height)
+    start_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 155, action_buttons_width, action_buttons_height)
+    exit_button = pygame.Rect(WIDTH // 2 - action_buttons_width // 2, HEIGHT - 99, action_buttons_width, action_buttons_height)
 
     while True:
         for event in pygame.event.get():
@@ -308,12 +310,13 @@ def set_params(params):
     global NORMAL_DEATH_PROBABILITY, REPRODUCTION_PROBABILITY, REPRODUCTION_RADIUS
     global INFECTION_RADIUS, INFECTION_PROBABILITY, INFECTED_ON_START
     global MIN_INFECTED_DAYS, CURE_PROBABILITY, IMMUNITY_DAYS, DISEASE_DEATH_PROBABILITY
-    global GATHER_STATS, DAY_IN_WEEK_MODIFIER
+    global GATHER_STATS, DAY_IN_WEEK_MODIFIER, SHOW_VIEW
 
     FPS = int(params["FPS"])
     NUM_AGENTS = int(params["Agents count"])
     MAX_DAYS = int(params["Maximum simulation duration in days"])
     GATHER_STATS = params["Gather stats data"].lower() == "true"
+    SHOW_VIEW = params["Show simulation view"].lower() == "true"
     
     NO_MOVE_PROBABILITY = float(params["Probability of agent staying in one place"])
     MAX_SPEED = int(params["Maximum distance per day"])
@@ -421,14 +424,14 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False        
-        elif event.type == pygame.MOUSEBUTTONDOWN:
+        elif SHOW_VIEW and event.type == pygame.MOUSEBUTTONDOWN:
             selected_agent = get_hovered_agent(agents)
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+        elif SHOW_VIEW and event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             paused = not paused
 
-    window.fill(WHITE)
+    if SHOW_VIEW: window.fill(WHITE)
 
-    if paused:
+    if SHOW_VIEW and paused:
         for agent in agents:
             agent.draw(window, selected=(agent == selected_agent))
         
@@ -446,10 +449,10 @@ while running:
                 agents.remove(agent)
             elif result is not None: # reproduction happened
                 agents.append(result)
-                agent.draw(window, selected=(agent == selected_agent))
-                result.draw(window)
+                if (SHOW_VIEW): agent.draw(window, selected=(agent == selected_agent))
+                if (SHOW_VIEW): result.draw(window)
             else:
-                agent.draw(window, selected=(agent == selected_agent))
+                if (SHOW_VIEW): agent.draw(window, selected=(agent == selected_agent))
 
         s = list(gather_stats(agents))
         s.append(vaccined_today[0])
@@ -458,8 +461,9 @@ while running:
         day += 1
         if day >= MAX_DAYS: running = False
 
-    pygame.display.flip()
-    clock.tick(FPS)
+    if (SHOW_VIEW):
+        pygame.display.flip()
+        clock.tick(FPS)
 
 pygame.quit()
 
@@ -469,5 +473,7 @@ if GATHER_STATS:
         writer.writerow(['Day', 'Susceptible', 'Infected', 'Recovered', 'Vaccined'])
         for i, stat in enumerate(stats):
             writer.writerow([i] + list(stat))
+
+print("Simulation finished succesfully.")
 
 sys.exit()
